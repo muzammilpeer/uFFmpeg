@@ -1,0 +1,5 @@
+target/
+dist/
+work/
+packaging/vendor/
+.git/

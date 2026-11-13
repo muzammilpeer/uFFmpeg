@@ -1,0 +1,12 @@
+[package]
+name = "frameforge-application"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+frameforge-engine = { path = "../engine" }
+frameforge-domain = { path = "../domain" }
+tempfile = "3"
+serde.workspace = true
+serde_json.workspace = true

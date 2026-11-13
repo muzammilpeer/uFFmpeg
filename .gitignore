@@ -1,0 +1,12 @@
+/target/
+/dist/
+/packaging/vendor/*/
+/work/
+.DS_Store
+__pycache__/
+*.pyc
+.env
+.env.*
+*.p12
+*.pfx
+*.key
