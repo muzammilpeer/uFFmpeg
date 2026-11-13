@@ -1,0 +1,309 @@
+import { Button, AboutSlint, ScrollView, LineEdit, CheckBox, ComboBox, Palette } from "std-widgets.slint";
+export struct JobRow { id: string, title: string, state: string, can-cancel: bool, can-retry: bool, }
+export struct MediaRow { name: string, }
+export struct StreamChoice { label: string, stream-index: int, chosen: bool, }
+export component AppWindow inherits Window {
+    title: "uFFmpeg · Media library";
+    preferred-width: 1140px;
+    preferred-height: 800px;
+    min-width: 960px;
+    min-height: 600px;
+    icon: @image-url("../../../assets/app-icon.svg");
+    init => { Palette.color-scheme = ColorScheme.dark; }
+    background: #111827;
+    in-out property <string> engine-status: "Discovering media engine…";
+    in-out property <string> import-status: "Add video or audio files to inspect their streams.";
+    in-out property <bool> busy: false;
+    in-out property <bool> show-about: false;
+    in-out property <[MediaRow]> media;
+    in-out property <int> selected: -1;
+    in-out property <string> selected-path;
+    in-out property <string> selected-details: "Select a file to view media details.";
+    in-out property <string> preview-note: "No media selected";
+    in-out property <image> preview;
+    in-out property <bool> can-split: false;
+    in-out property <bool> can-range: false;
+    in-out property <bool> audio-view: false;
+    in-out property <bool> full-audio: true;
+    in-out property <bool> auto-split: false;
+    in-out property <string> segment-length: "2";
+    in-out property <int> segment-unit: 1;
+    in-out property <int> auto-segment-count: 0;
+    in-out property <string> auto-summary: "Select a source with a known duration.";
+    callback update-auto-plan();
+    changed segment-length => { root.update-auto-plan(); }
+    changed segment-unit => { root.update-auto-plan(); }
+    changed audio-view => { root.update-auto-plan(); }
+    in-out property <int> audio-format: 0;
+    in-out property <bool> has-selected-audio: false;
+    in-out property <string> audio-selection-status: "Select a media file to choose its streams.";
+    in-out property <[StreamChoice]> video-streams;
+    in-out property <[StreamChoice]> audio-streams;
+    in-out property <[JobRow]> jobs;
+    in-out property <bool> jobs-view: false;
+    in-out property <bool> closing: false;
+    in-out property <int> pending-jobs: 0;
+    in-out property <string> active-job: "Queue idle";
+    in-out property <float> active-progress: 0;
+    in-out property <string> selected-job-id;
+    in-out property <string> job-details: "Select a job to see its result and saved paths.";
+    in-out property <string> queue-warning;
+    callback cancel-job(string);
+    callback retry-job(string);
+    callback choose-video(int);
+    callback toggle-audio(int, bool);
+    callback export-audio();
+    in-out property <bool> accurate: true;
+    in-out property <string> range-start: "0";
+    in-out property <string> range-end;
+    in-out property <[string]> ranges;
+    in-out property <bool> merge-view: false;
+    in-out property <bool> normalize-merge: false;
+    in-out property <bool> can-merge: false;
+    in-out property <bool> can-copy-merge: false;
+    in-out property <string> merge-summary: "Add at least two videos to merge.";
+    callback export-merge();
+    callback add-range();
+    callback remove-range(int);
+    callback export-segments();
+    callback import-files();
+    callback select-media(int);
+    callback move-media(int);
+    callback remove-media();
+    in-out property <bool> preferences-view: false;
+    in-out property <string> preferences-status: "Save the current split mode, audio format and segment interval as startup defaults.";
+    in-out property <bool> can-reveal-output: false;
+    callback save-preferences();
+    callback reveal-output();
+    callback reveal-licenses();
+    callback navigate(int);
+    navigate(mode) => {
+        root.preferences-view = mode == 4;
+        root.jobs-view = mode == 3;
+        root.merge-view = mode == 1;
+        root.audio-view = mode == 2;
+    }
+    MenuBar {
+        Menu {
+            title: "File";
+            MenuItem { title: "Add media…"; shortcut: @keys(Control + O); enabled: !root.busy; activated => { root.import-files(); } }
+            MenuItem { title: "Settings"; shortcut: @keys(Control + Comma); activated => { root.navigate(4); } }
+            MenuItem { title: "Show output in folder"; enabled: root.can-reveal-output; activated => { root.reveal-output(); } }
+        }
+        Menu {
+            title: "View";
+            MenuItem { title: "Split video"; shortcut: @keys(Control + Digit1); activated => { root.navigate(0); } }
+            MenuItem { title: "Merge videos"; shortcut: @keys(Control + Digit2); activated => { root.navigate(1); } }
+            MenuItem { title: "Extract audio"; shortcut: @keys(Control + Digit3); activated => { root.navigate(2); } }
+            MenuItem { title: "Jobs"; shortcut: @keys(Control + Digit4); activated => { root.navigate(3); } }
+        }
+    }
+    ScrollView {
+        VerticalLayout {
+            padding: 16px;
+            spacing: 10px;
+            alignment: start;
+            HorizontalLayout {
+                height: 36px;
+                spacing: 8px;
+                Text { text: "uFFmpeg"; color: #f8fafc; font-size: 24px; font-weight: 700; }
+                Button { text: root.busy ? "Working…" : "Add media…"; enabled: !root.busy; clicked => { root.import-files(); } }
+                Button { text: "Split video"; enabled: !root.busy; clicked => { root.navigate(0); } }
+                Button { text: "Merge videos"; enabled: !root.busy; clicked => { root.navigate(1); } }
+                Button { text: "Extract audio"; enabled: !root.busy; clicked => { root.navigate(2); } }
+                Button { text: "Jobs · " + root.pending-jobs; clicked => { root.navigate(3); } }
+                Button { text: "Settings"; clicked => { root.navigate(4); } }
+            }
+            Text { text: root.preferences-view ? "SETTINGS" : root.jobs-view ? "JOBS" : root.merge-view ? "MEDIA LIBRARY · MERGE VIDEOS" : root.audio-view ? "MEDIA LIBRARY · AUDIO EXTRACTION" : "MEDIA LIBRARY · SPLIT VIDEO"; color: #38bdf8; font-size: 16px; }
+            ScrollView {
+                height: 48px;
+                Text { text: root.import-status; color: #cbd5e1; wrap: word-wrap; }
+            }
+            Text { text: root.active-job; color: #38bdf8; wrap: word-wrap; }
+            Rectangle {
+                accessible-role: progress-indicator;
+                accessible-label: root.active-job;
+                accessible-value: root.active-progress + "%";
+                accessible-value-minimum: 0;
+                accessible-value-maximum: 100;
+                height: 4px;
+                background: #334155;
+                Rectangle { width: parent.width * root.active-progress / 100; background: #38bdf8; }
+            }
+            if root.queue-warning != "" : Text { text: root.queue-warning; color: #fbbf24; wrap: word-wrap; }
+            if root.preferences-view : Rectangle {
+                background: #1e293b;
+                height: 480px;
+                VerticalLayout {
+                    padding: 20px; spacing: 16px; alignment: start;
+                    Text { text: "Startup defaults"; color: #f8fafc; font-size: 22px; }
+                    Text { text: "Choose your split mode, audio format and segment interval in the editing views, then save them here. Import and export folders are remembered separately when chosen."; color: #cbd5e1; wrap: word-wrap; }
+                    Button { text: "Save current choices as defaults"; enabled: !root.busy; clicked => { root.save-preferences(); } }
+                    Text { text: root.preferences-status; color: #38bdf8; wrap: word-wrap; }
+                    Text { text: "Keyboard: Ctrl+O Add media · Ctrl+1 Split · Ctrl+2 Merge · Ctrl+3 Audio · Ctrl+4 Jobs · Ctrl+, Settings. On macOS use Command. Tab / Shift+Tab move between controls; Space activates buttons and checkboxes."; color: #cbd5e1; wrap: word-wrap; }
+                    Text { text: "Release builds include FFmpeg and dav1d licenses and source records."; color: #cbd5e1; wrap: word-wrap; }
+                    Button { text: "Show third-party licenses"; clicked => { root.reveal-licenses(); } }
+                    Button { text: "About Slint"; clicked => { root.show-about = !root.show-about; } }
+                }
+            }
+            if root.jobs-view : Rectangle {
+                height: 480px;
+                background: #0f172a;
+                border-radius: 12px;
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 12px;
+                    Text { text: "JOBS · Runs in submission order. Failures do not stop later jobs."; color: #38bdf8; wrap: word-wrap; }
+                    ScrollView {
+                        VerticalLayout {
+                            spacing: 8px;
+                            for job in root.jobs : HorizontalLayout {
+                                Button { text: "#" + job.id + " · " + job.state + " · " + job.title; clicked => { root.selected-job-id = job.id; } }
+                                Button { text: "Cancel"; enabled: job.can-cancel; clicked => { root.cancel-job(job.id); } }
+                                Button { text: "Retry"; enabled: job.can-retry && !root.closing; clicked => { root.retry-job(job.id); } }
+                            }
+                        }
+                    }
+                    Button { text: "Show output in folder"; enabled: root.can-reveal-output; clicked => { root.reveal-output(); } }
+                    ScrollView { height: 180px; Text { text: root.job-details; color: #e2e8f0; wrap: word-wrap; } }
+                    Text { text: "Retry keeps the original destination. Existing completed files are protected; prepare a new export to change its location."; color: #94a3b8; wrap: word-wrap; }
+                }
+            }
+            if !root.jobs-view && !root.preferences-view : HorizontalLayout {
+                height: 320px;
+                spacing: 20px;
+                VerticalLayout {
+                    width: 300px;
+                    spacing: 10px;
+                    Text { text: "Clips · " + root.media.length; color: #f8fafc; font-size: 18px; }
+                    ScrollView {
+                        VerticalLayout {
+                            spacing: 6px;
+                            for item[index] in root.media : Button {
+                                text: (index == root.selected ? "● " : "") + (index + 1) + ". " + item.name;
+                                enabled: !root.busy;
+                                clicked => { root.select-media(index); }
+                            }
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 6px;
+                        Button { text: "Move up"; enabled: !root.busy && root.selected > 0; clicked => { root.move-media(-1); } }
+                        Button { text: "Move down"; enabled: !root.busy && root.selected >= 0 && root.selected < root.media.length - 1; clicked => { root.move-media(1); } }
+                        Button { text: "Remove"; enabled: !root.busy && root.selected >= 0; clicked => { root.remove-media(); } }
+                    }
+                }
+                Rectangle {
+                    background: #1e293b;
+                    border-radius: 12px;
+                    VerticalLayout {
+                        padding: 20px;
+                        spacing: 12px;
+                        Image { accessible-label: root.preview-note; source: root.preview; height: 100px; image-fit: contain; }
+                        Text { text: root.preview-note; color: #94a3b8; wrap: word-wrap; }
+                        ScrollView {
+                            VerticalLayout {
+                                spacing: 12px;
+                                Text { text: root.selected-path; color: #38bdf8; wrap: word-wrap; }
+                                Text { text: root.selected-details; color: #e2e8f0; wrap: word-wrap; }
+                                if !root.merge-view : VerticalLayout {
+                                    spacing: 6px;
+                                    Text { text: "STREAMS · Selections apply to split and audio extraction"; color: #38bdf8; wrap: word-wrap; }
+                                    for stream in root.video-streams : Button {
+                                        text: (stream.chosen ? "● " : "○ ") + stream.label;
+                                        enabled: !root.busy;
+                                        clicked => { root.choose-video(stream.stream-index); }
+                                    }
+                                    for stream in root.audio-streams : CheckBox {
+                                        text: stream.label;
+                                        checked: stream.chosen;
+                                        enabled: !root.busy;
+                                        toggled => { root.toggle-audio(stream.stream-index, self.checked); }
+                                    }
+                                    Text { text: root.audio-selection-status; color: #94a3b8; wrap: word-wrap; }
+                                }
+    
+                            }
+                        }
+                    }
+                }
+            }
+            if !root.merge-view && !root.jobs-view && !root.preferences-view : Rectangle {
+                background: #0f172a;
+                border-radius: 12px;
+                height: 300px;
+                ScrollView {
+                    VerticalLayout {
+                        padding: 16px;
+                        spacing: 8px;
+                        Text { text: root.auto-split ? (root.audio-view ? "AUTO SPLIT AUDIO · Whole source" : "AUTO SPLIT VIDEO · Whole source") : (root.audio-view ? "EXTRACT AUDIO · Times in seconds" : "SPLIT SELECTED VIDEO · Times in seconds"); color: #38bdf8; font-weight: 700; }
+                        CheckBox { text: "Auto split entire source"; checked <=> root.auto-split; enabled: !root.busy; }
+                        if root.auto-split : HorizontalLayout {
+                            spacing: 10px;
+                            Text { text: "Segment length"; color: #cbd5e1; }
+                            LineEdit { accessible-label: "Segment length"; text <=> root.segment-length; enabled: !root.busy; }
+                            ComboBox { accessible-label: "Segment unit"; model: ["Seconds", "Minutes"]; current-index <=> root.segment-unit; enabled: !root.busy; width: 140px; }
+                        }
+                        if root.auto-split : Text { text: root.auto-summary; color: #38bdf8; wrap: word-wrap; }
+                        if !root.auto-split : HorizontalLayout {
+                            spacing: 10px;
+                            Text { text: "Start"; color: #cbd5e1; }
+                            LineEdit { accessible-label: "Start time in seconds"; text <=> root.range-start; enabled: root.can-range && !root.busy; }
+                            Text { text: "End"; color: #cbd5e1; }
+                            LineEdit { accessible-label: "End time in seconds"; text <=> root.range-end; enabled: root.can-range && !root.busy; }
+                            Button { text: "Add range"; enabled: root.can-range && !root.busy; clicked => { root.add-range(); } }
+                        }
+                        if !root.auto-split : ScrollView {
+                            height: 64px;
+                            VerticalLayout {
+                                for range[index] in root.ranges : HorizontalLayout {
+                                    Text { text: (index + 1) + ". " + range; color: #e2e8f0; }
+                                    Button { text: "Remove range"; enabled: !root.busy; clicked => { root.remove-range(index); } }
+                                }
+                            }
+                        }
+                        if !root.audio-view : HorizontalLayout {
+                            CheckBox { text: "Accurate re-encode"; checked <=> root.accurate; enabled: !root.busy; }
+                            Button { text: root.auto-split ? "Split whole video…" : "Export segments…"; enabled: root.can-split && (root.auto-split ? root.auto-segment-count > 0 : root.ranges.length > 0) && !root.busy; clicked => { root.export-segments(); } }
+                        }
+                        if root.audio-view : HorizontalLayout {
+                            spacing: 8px;
+                            if !root.auto-split : CheckBox { text: "Full source"; checked <=> root.full-audio; enabled: !root.busy; }
+                            Button { text: (root.audio-format == 0 ? "● " : "") + "Copy MKA"; enabled: !root.busy; clicked => { root.audio-format = 0; } }
+                            Button { text: (root.audio-format == 1 ? "● " : "") + "AAC M4A"; enabled: !root.busy; clicked => { root.audio-format = 1; } }
+                            Button { text: (root.audio-format == 2 ? "● " : "") + "WAV 16-bit"; enabled: !root.busy; clicked => { root.audio-format = 2; } }
+                            Button { text: root.auto-split ? "Split whole audio…" : "Extract audio…"; enabled: !root.busy && root.has-selected-audio && (root.auto-split ? root.auto-segment-count > 0 : (root.full-audio || root.ranges.length > 0)); clicked => { root.export-audio(); } }
+                        }
+                        if root.audio-view : Text { text: root.audio-format == 0 ? "Copy keeps approved source codecs. Range cuts follow compressed packet boundaries and may include extra samples." : root.audio-format == 1 ? "AAC conversion · M4A · 192 kb/s. Lossy; AAC may choose a supported sample rate. Channel count is retained." : "WAV conversion · signed 16-bit PCM. Sample rate and channel count are retained; bit-depth conversion can change quality."; color: #94a3b8; wrap: word-wrap; }
+                        if !root.audio-view : Text { text: !root.can-split ? "Select video with a known duration to add ranges." : root.accurate ? "MP4 · MPEG-4 video + AAC audio. Cuts follow frame/sample boundaries; quality may change." : "Fast copy · MKV. Cuts can include earlier keyframes and have a different duration. No re-encode."; color: #94a3b8; wrap: word-wrap; }
+                        Text { text: root.audio-view ? ((root.auto-split ? "Auto split · " : root.full-audio ? "Full source · " : "Saved ranges · ") + root.audio-selection-status) : "Chosen video + checked audio tracks. Uncheck every audio track for a silent split. Existing files are protected."; color: #94a3b8; wrap: word-wrap; }
+                    }
+                }
+            }
+            if root.merge-view && !root.jobs-view && !root.preferences-view : Rectangle {
+                background: #0f172a;
+                border-radius: 12px;
+                height: 260px;
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 8px;
+                    Text { text: "MERGE WHOLE CLIPS · Library order, top to bottom"; color: #38bdf8; font-weight: 700; }
+                    ScrollView {
+                        VerticalLayout {
+                            Text { text: root.merge-summary; color: #cbd5e1; wrap: word-wrap; }
+                        }
+                    }
+                    CheckBox { text: "Normalize and re-encode (changes video and audio)"; checked <=> root.normalize-merge; enabled: !root.busy; }
+                    HorizontalLayout {
+                        Button { text: "Save merged video…"; enabled: !root.busy && root.can-merge && (root.normalize-merge || root.can-copy-merge); clicked => { root.export-merge(); } }
+                        Text { text: root.normalize-merge ? "MP4 · MPEG-4 + AAC" : "Fast copy · MKV"; color: #94a3b8; }
+                    }
+                    Text { text: "Use Move up / Move down to set order. Normalization keeps audio tracks by position; missing tracks become silence."; color: #94a3b8; wrap: word-wrap; }
+                    Text { text: "Merge uses whole-source streams; split/audio selections do not apply. Existing files are never replaced."; color: #94a3b8; wrap: word-wrap; }
+                }
+            }
+            Text { text: root.engine-status; color: #94a3b8; wrap: word-wrap; font-size: 12px; }
+            if root.show-about : AboutSlint { }
+        }
+    }
+}

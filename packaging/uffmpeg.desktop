@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=uFFmpeg
+Comment=Split, merge and extract audio from local media
+Exec=uffmpeg
+Icon=uffmpeg
+Terminal=false
+Categories=AudioVideo;Video;AudioVideoEditing;
+StartupNotify=true
